@@ -46,6 +46,8 @@ struct D3DSwapChain
     uint32_t currentBackBuffer = 0;
     Microsoft::WRL::ComPtr<ID3D12Resource> imageBuffer[bufferCount];
     Microsoft::WRL::ComPtr<ID3D12Resource> depthStencilBuffer;
+    Microsoft::WRL::ComPtr<ID3D12Resource> rtvHeap;
+    Microsoft::WRL::ComPtr<ID3D12Resource> dsvHeap;
 };
 
 struct D3DComponents
@@ -70,7 +72,7 @@ struct WindowImageInfo
     uint32_t clientHeight = 600;
 } windowImageInfo;
 
-struct D3DShyncPrimitives
+struct D3DSyncPrimitives
 {
     D3DFence fence;
 } dx12SynchPrimitives;
@@ -258,7 +260,26 @@ WinMain(HINSTANCE hInstance,
         &swapChainDescription,
         dx12Components.swapChain.handle.GetAddressOf());
 
-    // create rtv and dsv descriptor heaps
+    // create rtv and dsv descriptor heaps (image views)
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDescriptor = {};
+    rtvHeapDescriptor.NumDescriptors = dx12Components.swapChain.bufferCount;
+    rtvHeapDescriptor.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    rtvHeapDescriptor.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    rtvHeapDescriptor.NodeMask = 0;
+
+    dx12Components.logicalDevice->CreateDescriptorHeap(
+        &rtvHeapDescriptor, 
+        IID_PPV_ARGS(dx12Components.swapChain.rtvHeap.GetAddressOf()));
+
+    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDescriptor = {};
+    dsvHeapDescriptor.NumDescriptors = 1;
+    dsvHeapDescriptor.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    dsvHeapDescriptor.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    dsvHeapDescriptor.NodeMask = 0;
+
+    dx12Components.logicalDevice->CreateDescriptorHeap(
+        &dsvHeapDescriptor,
+        IID_PPV_ARGS(dx12Components.swapChain.dsvHeap.GetAddressOf()));
 
     // main loop
     running = true;
