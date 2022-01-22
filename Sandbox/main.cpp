@@ -39,11 +39,20 @@ struct D3DDescriptorSizes
     uint32_t srv_uav_cbv;
 } dx12DescriptorSizes;
 
+struct D3DSwapChain
+{
+    Microsoft::WRL::ComPtr<IDXGISwapChain> handle;
+    static const uint32_t bufferCount = 2;
+    uint32_t currentBackBuffer = 0;
+    Microsoft::WRL::ComPtr<ID3D12Resource> imageBuffer[bufferCount];
+    Microsoft::WRL::ComPtr<ID3D12Resource> depthStencilBuffer;
+};
+
 struct D3DComponents
 {
     Microsoft::WRL::ComPtr<IDXGIFactory4> dxgiFactory;
-    Microsoft::WRL::ComPtr<IDXGISwapChain> swapChain;
     Microsoft::WRL::ComPtr<ID3D12Device> logicalDevice;
+    D3DSwapChain swapChain;
 } dx12Components;
 
 struct D3DCommands
@@ -68,6 +77,7 @@ struct D3DShyncPrimitives
 
 struct D3DFeaturesSupport
 {
+    bool msaa4xState = false;
     uint32_t msaa4xQuality;
 } dx12FeaturesSupport;
 
@@ -224,7 +234,29 @@ WinMain(HINSTANCE hInstance,
     dx12Commands.commandList->Close();
 
     // create swapchain
-    
+    dx12Components.swapChain.handle.Reset();
+
+    DXGI_SWAP_CHAIN_DESC swapChainDescription = {};
+    swapChainDescription.BufferDesc.Width = windowImageInfo.clientWidth;
+    swapChainDescription.BufferDesc.Height = windowImageInfo.clientHeight;
+    swapChainDescription.BufferDesc.RefreshRate.Numerator = 60;
+    swapChainDescription.BufferDesc.RefreshRate.Denominator = 1;
+    swapChainDescription.BufferDesc.Format = windowImageInfo.backBufferFormat;
+    swapChainDescription.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
+    swapChainDescription.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
+    swapChainDescription.SampleDesc.Count = dx12FeaturesSupport.msaa4xState ? 4 : 1;
+    swapChainDescription.SampleDesc.Quality = dx12FeaturesSupport.msaa4xState ? (dx12FeaturesSupport.msaa4xQuality - 1) : 0;
+    swapChainDescription.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    swapChainDescription.BufferCount = dx12Components.swapChain.bufferCount;
+    swapChainDescription.OutputWindow = windowHandle;
+    swapChainDescription.Windowed = true;
+    swapChainDescription.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    swapChainDescription.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+
+    dx12Components.dxgiFactory->CreateSwapChain(
+        dx12Commands.commandQueue.Get(),
+        &swapChainDescription,
+        dx12Components.swapChain.handle.GetAddressOf());
 
     // create rtv and dsv descriptor heaps
 
