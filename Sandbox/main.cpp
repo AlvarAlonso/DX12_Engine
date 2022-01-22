@@ -15,7 +15,23 @@
 #include <DirectXCollision.h>
 #include "helloWorld.h"
 
-bool m_running = false;
+#define global_variable static;
+#define internal static;
+#define local_persist static;
+
+using Microsoft::WRL::ComPtr;
+//using namespace std;
+//using namespace DirectX;
+
+
+global_variable bool running = false;
+
+struct Direct3DComponents
+{
+    Microsoft::WRL::ComPtr<IDXGIFactory4> dxgiFactory;
+    Microsoft::WRL::ComPtr<IDXGISwapChain> swapChain;
+    Microsoft::WRL::ComPtr<ID3D12Device> logicalDevice;
+} dx12Components;
 
 LRESULT CALLBACK
 MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -31,13 +47,13 @@ MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 
         case WM_DESTROY:
         {
-            m_running = false;
+            running = false;
             OutputDebugStringA("WM_DESTROY\n");
         } break;
 
         case WM_CLOSE:
         {
-            m_running = false;
+            running = false;
             OutputDebugStringA("WM_CLOSE\n");
         } break;
 
@@ -96,31 +112,53 @@ WinMain(HINSTANCE hInstance,
         0
     );
 
-    if(windowHandle)
-    {
-        m_running = true;
-
-        while (m_running)
-        {
-            MSG message;
-            BOOL messageResult = GetMessage(&message, 0, 0, 0);
-            if(messageResult > 0)
-            {
-                TranslateMessage(&message);
-                DispatchMessage(&message);
-            }
-            else
-            {
-                break;
-            }
-        }
-    }
-    else
+    if(!windowHandle)
     {
         // TODO: handle error
         return false;
     }
 
+    // init Direct3D 12
+    // TODO: Manage possible errors
+    CreateDXGIFactory1(IID_PPV_ARGS(&dx12Components.dxgiFactory));
+
+    // Get hardware adapter
+    // TODO: Enumerate hardware adapters and pick the most suitable one
+    HRESULT result = D3D12CreateDevice(
+        nullptr, 
+        D3D_FEATURE_LEVEL_11_0, 
+        IID_PPV_ARGS(&dx12Components.logicalDevice));
+
+    // If no hardware device, get WARP device
+    if (result < 0)
+    {
+        // TODO: Warn the user about not found hardware device
+        ComPtr<IDXGIAdapter> pWarpAdapter;
+        dx12Components.dxgiFactory->EnumWarpAdapter(IID_PPV_ARGS(&pWarpAdapter));
+
+        D3D12CreateDevice(
+            pWarpAdapter.Get(),
+            D3D_FEATURE_LEVEL_11_0,
+            IID_PPV_ARGS(&dx12Components.logicalDevice));
+    }
+
+    // main loop
+    running = true;
+
+    while (running)
+    {
+        MSG message;
+        BOOL messageResult = GetMessage(&message, 0, 0, 0);
+        if(messageResult > 0)
+        {
+            TranslateMessage(&message);
+            DispatchMessage(&message);
+        }
+        else
+        {
+            break;
+        }
+    }
 
     return 0;
 }
