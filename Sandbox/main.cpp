@@ -8,6 +8,7 @@
 #include <wrl.h>
 #include <dxgi1_4.h>
 #include <d3d12.h>
+#include "d3dx12.h"
 #include <D3Dcompiler.h>
 #include <DirectXMath.h>
 #include <DirectXPackedVector.h>
@@ -46,8 +47,8 @@ struct D3DSwapChain
     uint32_t currentBackBuffer = 0;
     Microsoft::WRL::ComPtr<ID3D12Resource> imageBuffer[bufferCount];
     Microsoft::WRL::ComPtr<ID3D12Resource> depthStencilBuffer;
-    Microsoft::WRL::ComPtr<ID3D12Resource> rtvHeap;
-    Microsoft::WRL::ComPtr<ID3D12Resource> dsvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
 };
 
 struct D3DComponents
@@ -70,6 +71,8 @@ struct WindowImageInfo
     DXGI_FORMAT depthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     uint32_t clientWidth = 800;
     uint32_t clientHeight = 600;
+    D3D12_VIEWPORT screenViewport;
+    D3D12_RECT scissorRect;
 } windowImageInfo;
 
 struct D3DSyncPrimitives
@@ -82,6 +85,24 @@ struct D3DFeaturesSupport
     bool msaa4xState = false;
     uint32_t msaa4xQuality;
 } dx12FeaturesSupport;
+
+ID3D12Resource* CurrentBackBuffer()
+{
+    return dx12Components.swapChain.imageBuffer[dx12Components.swapChain.currentBackBuffer].Get();
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView()
+{
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE(
+        dx12Components.swapChain.rtvHeap->GetCPUDescriptorHandleForHeapStart(),
+        dx12Components.swapChain.currentBackBuffer,
+        dx12DescriptorSizes.rtv);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()
+{
+    return dx12Components.swapChain.dsvHeap->GetCPUDescriptorHandleForHeapStart();
+}
 
 LRESULT CALLBACK
 MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -295,7 +316,50 @@ WinMain(HINSTANCE hInstance,
         }
         else
         {
-            break;
+            // Draw stuff
+            dx12Commands.directCmdListAlloc->Reset();
+
+            dx12Commands.commandList->Reset(dx12Commands.directCmdListAlloc.Get(), nullptr);
+
+            dx12Commands.commandList->ResourceBarrier(
+                1, 
+                &CD3DX12_RESOURCE_BARRIER::Transition(dx12Components.swapChain.imageBuffer[dx12Components.swapChain.currentBackBuffer].Get(),
+                D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+            // Set viewport and scissor
+            dx12Commands.commandList->RSSetViewports(1, &windowImageInfo.screenViewport);
+            dx12Commands.commandList->RSSetScissorRects(1, &windowImageInfo.scissorRect);
+
+            // Clear render targets
+            dx12Commands.commandList->ClearRenderTargetView(CurrentBackBufferView(), DirectX::Colors::LightSteelBlue, 0, nullptr);
+            dx12Commands.commandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+
+            dx12Commands.commandList->OMSetRenderTargets(1, &CurrentBackBufferView(), true, &DepthStencilView());
+                
+            dx12Commands.commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+                CurrentBackBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+
+            dx12Commands.commandList->Close();
+
+            ID3D12CommandList* commandLists = { dx12Commands.commandList.Get() };
+
+            dx12Components.swapChain.handle->Present(0, 0);
+            dx12Components.swapChain.currentBackBuffer = (dx12Components.swapChain.currentBackBuffer + 1) % dx12Components.swapChain.bufferCount;
+
+            // Flush command queue
+            dx12SynchPrimitives.fence.currentFence++;
+
+            dx12Commands.commandQueue->Signal(dx12SynchPrimitives.fence.handle.Get(), dx12SynchPrimitives.fence.currentFence);
+
+            if(dx12SynchPrimitives.fence.handle->GetCompletedValue() < dx12SynchPrimitives.fence.currentFence)
+            {
+                HANDLE eventHandle = CreateEventEx(nullptr, nullptr, false, EVENT_ALL_ACCESS);
+
+                dx12SynchPrimitives.fence.handle->SetEventOnCompletion(dx12SynchPrimitives.fence.currentFence, eventHandle);
+
+                WaitForSingleObject(eventHandle, INFINITE);
+                CloseHandle(eventHandle);
+            }
         }
     }
 
