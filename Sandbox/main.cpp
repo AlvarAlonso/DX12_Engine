@@ -46,6 +46,13 @@ struct D3DComponents
     Microsoft::WRL::ComPtr<ID3D12Device> logicalDevice;
 } dx12Components;
 
+struct D3DCommands
+{
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> directCmdListAlloc;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList;
+} dx12Commands;
+
 struct WindowImageInfo
 {
     DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -198,8 +205,26 @@ WinMain(HINSTANCE hInstance,
     assert(dx12FeaturesSupport.msaa4xQuality > 0);
 
     // create command objects
+    D3D12_COMMAND_QUEUE_DESC queueDescription = {};
+    queueDescription.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    queueDescription.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+    dx12Components.logicalDevice->CreateCommandQueue(&queueDescription, IID_PPV_ARGS(&dx12Commands.commandQueue));
+
+    dx12Components.logicalDevice->CreateCommandAllocator(
+        D3D12_COMMAND_LIST_TYPE_DIRECT,
+        IID_PPV_ARGS(dx12Commands.directCmdListAlloc.GetAddressOf()));
+
+    dx12Components.logicalDevice->CreateCommandList(
+        0,
+        D3D12_COMMAND_LIST_TYPE_DIRECT,
+        dx12Commands.directCmdListAlloc.Get(),
+        nullptr,
+        IID_PPV_ARGS(dx12Commands.commandList.GetAddressOf()));
+
+    dx12Commands.commandList->Close();
 
     // create swapchain
+    
 
     // create rtv and dsv descriptor heaps
 
