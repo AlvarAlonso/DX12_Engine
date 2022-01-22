@@ -15,6 +15,8 @@
 #include <DirectXCollision.h>
 #include "helloWorld.h"
 
+bool m_running = false;
+
 LRESULT CALLBACK
 MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -29,11 +31,13 @@ MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 
         case WM_DESTROY:
         {
+            m_running = false;
             OutputDebugStringA("WM_DESTROY\n");
         } break;
 
         case WM_CLOSE:
         {
+            m_running = false;
             OutputDebugStringA("WM_CLOSE\n");
         } break;
 
@@ -94,7 +98,9 @@ WinMain(HINSTANCE hInstance,
 
     if(windowHandle)
     {
-        for(;;)
+        m_running = true;
+
+        while (m_running)
         {
             MSG message;
             BOOL messageResult = GetMessage(&message, 0, 0, 0);
