@@ -24,6 +24,34 @@ using Microsoft::WRL::ComPtr;
 //using namespace std;
 //using namespace DirectX;
 
+#define FAILED(hr)      (((HRESULT)(hr)) < 0)
+
+struct DxException
+{
+    DxException(HRESULT hr, const std::wstring& functionName, const std::wstring& filename, int lineNumber)
+        : m_errorCode(hr), m_functionName(functionName), m_filename(filename), m_lineNumber(lineNumber) {}
+    HRESULT m_errorCode = S_OK;
+    std::wstring m_functionName;
+    std::wstring m_filename;
+    int32_t m_lineNumber = -1;
+};
+
+inline std::wstring AnsiToWString(const std::string& str)
+{
+    WCHAR buffer[512];
+    MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, buffer, 512);
+    return std::wstring(buffer);
+}
+
+#ifndef DX_CHECK
+#define DX_CHECK(x)                                                   \
+{                                                                     \
+    HRESULT hr__ = (x);                                               \
+    std::wstring wfn = AnsiToWString(__FILE__);                       \
+    if(FAILED(hr__)) { throw DxException(hr__, L#x, wfn, __LINE__); } \
+}
+#endif
+
 
 global_variable bool running = false;
 
