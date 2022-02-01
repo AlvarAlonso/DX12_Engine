@@ -130,6 +130,48 @@ D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()
     return dx12Components.swapChain.dsvHeap->GetCPUDescriptorHandleForHeapStart();
 }
 
+LRESULT CALLBACK
+MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    LRESULT result = 0;
+
+    switch (message)
+    {
+        case WM_SIZE:
+        {
+            logOutput(LOG_LEVEL_INFO, "WM_SIZE\n");
+            //OutputDebugStringA("WM_SIZE\n");
+        } break;
+
+        case WM_DESTROY:
+        {
+            d3dApp.running = false;
+            logOutput(LOG_LEVEL_INFO, "WM_DESTROY\n");
+            //OutputDebugStringA("WM_DESTROY\n");
+        } break;
+
+        case WM_CLOSE:
+        {
+            d3dApp.running = false;
+            logOutput(LOG_LEVEL_INFO, "WM_CLOSE\n");
+            //OutputDebugStringA("WM_CLOSE\n");
+        } break;
+
+        case WM_ACTIVATEAPP:
+        {
+            logOutput(LOG_LEVEL_INFO, "WM_ACTIVATEAPP\n");
+            //OutputDebugStringA("WM_ACTIVATEAPP\n");
+        } break;
+            
+        default:
+        {
+            result = DefWindowProc(window, message, wParam, lParam);
+        } break;
+    }
+
+    return result;
+}
+
 bool InitWindow()
 {
     WNDCLASS windowClass;
@@ -171,6 +213,8 @@ bool InitWindow()
         // TODO: handle error
         return false;
     }
+
+    return true;
 }
 
 void InitDirect3D()
@@ -261,7 +305,7 @@ void InitDirect3D()
     swapChainDescription.SampleDesc.Quality = dx12FeaturesSupport.msaa4xState ? (dx12FeaturesSupport.msaa4xQuality - 1) : 0;
     swapChainDescription.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swapChainDescription.BufferCount = dx12Components.swapChain.bufferCount;
-    swapChainDescription.OutputWindow = windowHandle;
+    swapChainDescription.OutputWindow = d3dApp.windowHandle;
     swapChainDescription.Windowed = true;
     swapChainDescription.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDescription.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
@@ -483,48 +527,6 @@ void Run()
             DrawFrame();
         }
     }
-}
-
-LRESULT CALLBACK
-MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    LRESULT result = 0;
-
-    switch (message)
-    {
-        case WM_SIZE:
-        {
-            logOutput(LOG_LEVEL_INFO, "WM_SIZE\n");
-            //OutputDebugStringA("WM_SIZE\n");
-        } break;
-
-        case WM_DESTROY:
-        {
-            running = false;
-            logOutput(LOG_LEVEL_INFO, "WM_DESTROY\n");
-            //OutputDebugStringA("WM_DESTROY\n");
-        } break;
-
-        case WM_CLOSE:
-        {
-            running = false;
-            logOutput(LOG_LEVEL_INFO, "WM_CLOSE\n");
-            //OutputDebugStringA("WM_CLOSE\n");
-        } break;
-
-        case WM_ACTIVATEAPP:
-        {
-            logOutput(LOG_LEVEL_INFO, "WM_ACTIVATEAPP\n");
-            //OutputDebugStringA("WM_ACTIVATEAPP\n");
-        } break;
-            
-        default:
-        {
-            result = DefWindowProc(window, message, wParam, lParam);
-        } break;
-    }
-
-    return result;
 }
 
 int CALLBACK
