@@ -46,13 +46,6 @@ inline std::wstring AnsiToWString(const std::string& str)
 //std::cout << "[ERROR]"<< hr__ <<std::endl;
 //if(FAILED(hr__)) { std::cout << "[ERROR]"<< hr__ <<std::endl; }    \        
 
-struct D3DApp
-{
-    bool running = false;
-    HWND windowHandle;
-    HINSTANCE hInstance;
-} d3dApp;
-
 struct D3DFence
 {
     Microsoft::WRL::ComPtr<ID3D12Fence> handle;
@@ -64,7 +57,7 @@ struct D3DDescriptorSizes
     uint32_t rtv;
     uint32_t dsv;
     uint32_t srv_uav_cbv;
-} dx12DescriptorSizes;
+};
 
 struct D3DSwapChain
 {
@@ -82,14 +75,14 @@ struct D3DComponents
     Microsoft::WRL::ComPtr<IDXGIFactory4> dxgiFactory;
     Microsoft::WRL::ComPtr<ID3D12Device> logicalDevice;
     D3DSwapChain swapChain;
-} dx12Components;
+};
 
 struct D3DCommands
 {
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> directCmdListAlloc;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList;
-} dx12Commands;
+};
 
 struct WindowImageInfo
 {
@@ -99,35 +92,71 @@ struct WindowImageInfo
     uint32_t clientHeight = 600;
     D3D12_VIEWPORT screenViewport;
     D3D12_RECT scissorRect;
-} windowImageInfo;
+};
 
 struct D3DSyncPrimitives
 {
     D3DFence fence;
-} dx12SynchPrimitives;
+};
 
 struct D3DFeaturesSupport
 {
     bool msaa4xState = false;
     uint32_t msaa4xQuality;
-} dx12FeaturesSupport;
+};
+
+struct D3DApp
+{
+    bool running = false;
+    HWND windowHandle;
+    HINSTANCE hInstance;
+} d3dApp;
+
+struct D3DDevice
+{
+    Microsoft::WRL::ComPtr<IDXGIFactory4> dxgiFactory;
+    Microsoft::WRL::ComPtr<ID3D12Device> logicalDevice;
+
+    D3DFeaturesSupport features;
+    D3DDescriptorSizes descriptorSizes;
+
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> directCmdListAlloc;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList;
+};
+
+struct D3DState
+{
+    D3DDevice device;
+    D3DSwapChain swapChain;
+
+    D3DFence fence;
+
+    DXGI_FORMAT backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    DXGI_FORMAT depthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    uint32_t clientWidth = 800;
+    uint32_t clientHeight = 600;
+    D3D12_VIEWPORT screenViewport;
+    D3D12_RECT scissorRect;
+
+} D3DState;
 
 ID3D12Resource* CurrentBackBuffer()
 {
-    return dx12Components.swapChain.imageBuffer[dx12Components.swapChain.currentBackBuffer].Get();
+    return D3DState.swapChain.imageBuffer[D3DState.swapChain.currentBackBuffer].Get();
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView()
 {
     return CD3DX12_CPU_DESCRIPTOR_HANDLE(
-        dx12Components.swapChain.rtvHeap->GetCPUDescriptorHandleForHeapStart(),
-        dx12Components.swapChain.currentBackBuffer,
-        dx12DescriptorSizes.rtv);
+        D3DState.swapChain.rtvHeap->GetCPUDescriptorHandleForHeapStart(),
+        D3DState.swapChain.currentBackBuffer,
+        D3DState.device.descriptorSizes.rtv);
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()
 {
-    return dx12Components.swapChain.dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    return D3DState.swapChain.dsvHeap->GetCPUDescriptorHandleForHeapStart();
 }
 
 LRESULT CALLBACK
@@ -225,107 +254,107 @@ void InitDirect3D()
     debugController->EnableDebugLayer();
 
     // TODO: Manage possible errors
-    DX_CHECK(CreateDXGIFactory1(IID_PPV_ARGS(&dx12Components.dxgiFactory)));
+    DX_CHECK(CreateDXGIFactory1(IID_PPV_ARGS(&D3DState.device.dxgiFactory)));
 
     // Get hardware adapter
     // TODO: Enumerate hardware adapters and pick the most suitable one
-    HRESULT device_result = D3D12CreateDevice(
+    HRESULT deviceResult = D3D12CreateDevice(
         nullptr, 
         D3D_FEATURE_LEVEL_11_0, 
-        IID_PPV_ARGS(&dx12Components.logicalDevice));
+        IID_PPV_ARGS(&D3DState.device.logicalDevice));
 
     // If no hardware device, get WARP device
-    if (FAILED(device_result))
+    if (FAILED(deviceResult))
     {
         // TODO: Warn the user about not found hardware device
         ComPtr<IDXGIAdapter> pWarpAdapter;
-        dx12Components.dxgiFactory->EnumWarpAdapter(IID_PPV_ARGS(&pWarpAdapter));
+        D3DState.device.dxgiFactory->EnumWarpAdapter(IID_PPV_ARGS(&pWarpAdapter));
 
         DX_CHECK(D3D12CreateDevice(
             pWarpAdapter.Get(),
             D3D_FEATURE_LEVEL_11_0,
-            IID_PPV_ARGS(&dx12Components.logicalDevice)));
+            IID_PPV_ARGS(&D3DState.device.logicalDevice)));
     }
 
     // synchcronitzation primitives
-    DX_CHECK(dx12Components.logicalDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE,
-        IID_PPV_ARGS(&dx12SynchPrimitives.fence.handle)));
+    DX_CHECK(D3DState.device.logicalDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE,
+        IID_PPV_ARGS(&D3DState.fence.handle)));
 
     // descriptor sizes
-    dx12DescriptorSizes.rtv = dx12Components.logicalDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    dx12DescriptorSizes.dsv = dx12Components.logicalDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-    dx12DescriptorSizes.srv_uav_cbv = dx12Components.logicalDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    D3DState.device.descriptorSizes.rtv = D3DState.device.logicalDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    D3DState.device.descriptorSizes.dsv = D3DState.device.logicalDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    D3DState.device.descriptorSizes.srv_uav_cbv = D3DState.device.logicalDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     // Check 4x MSAA quality support
     D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msaaQualityLevels;
-    msaaQualityLevels.Format = windowImageInfo.backBufferFormat;
+    msaaQualityLevels.Format = D3DState.backBufferFormat;
     msaaQualityLevels.SampleCount = 4;
     msaaQualityLevels.Flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE;
     msaaQualityLevels.NumQualityLevels = 0;
 
-    DX_CHECK(dx12Components.logicalDevice->CheckFeatureSupport(
+    DX_CHECK(D3DState.device.logicalDevice->CheckFeatureSupport(
         D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS,
         &msaaQualityLevels,
         sizeof(msaaQualityLevels)));
 
-    dx12FeaturesSupport.msaa4xQuality = msaaQualityLevels.NumQualityLevels;
-    assert(dx12FeaturesSupport.msaa4xQuality > 0);
+    D3DState.device.features.msaa4xQuality = msaaQualityLevels.NumQualityLevels;
+    assert(D3DState.device.features.msaa4xQuality > 0);
 
     // create command objects
     D3D12_COMMAND_QUEUE_DESC queueDescription = {};
     queueDescription.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     queueDescription.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-    DX_CHECK(dx12Components.logicalDevice->CreateCommandQueue(&queueDescription, IID_PPV_ARGS(&dx12Commands.commandQueue)));
+    DX_CHECK(D3DState.device.logicalDevice->CreateCommandQueue(&queueDescription, IID_PPV_ARGS(&D3DState.device.commandQueue)));
 
-    DX_CHECK(dx12Components.logicalDevice->CreateCommandAllocator(
+    DX_CHECK(D3DState.device.logicalDevice->CreateCommandAllocator(
         D3D12_COMMAND_LIST_TYPE_DIRECT,
-        IID_PPV_ARGS(dx12Commands.directCmdListAlloc.GetAddressOf())));
+        IID_PPV_ARGS(D3DState.device.directCmdListAlloc.GetAddressOf())));
 
-    DX_CHECK(dx12Components.logicalDevice->CreateCommandList(
+    DX_CHECK(D3DState.device.logicalDevice->CreateCommandList(
         0,
         D3D12_COMMAND_LIST_TYPE_DIRECT,
-        dx12Commands.directCmdListAlloc.Get(),
+        D3DState.device.directCmdListAlloc.Get(),
         nullptr,
-        IID_PPV_ARGS(dx12Commands.commandList.GetAddressOf())));
+        IID_PPV_ARGS(D3DState.device.commandList.GetAddressOf())));
 
-    dx12Commands.commandList->Close();
+    D3DState.device.commandList->Close();
 
     // create swapchain
-    dx12Components.swapChain.handle.Reset();
+    D3DState.swapChain.handle.Reset();
 
     DXGI_SWAP_CHAIN_DESC swapChainDescription = {};
-    swapChainDescription.BufferDesc.Width = windowImageInfo.clientWidth;
-    swapChainDescription.BufferDesc.Height = windowImageInfo.clientHeight;
+    swapChainDescription.BufferDesc.Width = D3DState.clientWidth;
+    swapChainDescription.BufferDesc.Height = D3DState.clientHeight;
     swapChainDescription.BufferDesc.RefreshRate.Numerator = 60;
     swapChainDescription.BufferDesc.RefreshRate.Denominator = 1;
-    swapChainDescription.BufferDesc.Format = windowImageInfo.backBufferFormat;
+    swapChainDescription.BufferDesc.Format = D3DState.backBufferFormat;
     swapChainDescription.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
     swapChainDescription.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
-    swapChainDescription.SampleDesc.Count = dx12FeaturesSupport.msaa4xState ? 4 : 1;
-    swapChainDescription.SampleDesc.Quality = dx12FeaturesSupport.msaa4xState ? (dx12FeaturesSupport.msaa4xQuality - 1) : 0;
+    swapChainDescription.SampleDesc.Count = D3DState.device.features.msaa4xState ? 4 : 1;
+    swapChainDescription.SampleDesc.Quality = D3DState.device.features.msaa4xState ? (D3DState.device.features.msaa4xQuality - 1) : 0;
     swapChainDescription.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapChainDescription.BufferCount = dx12Components.swapChain.bufferCount;
+    swapChainDescription.BufferCount = D3DState.swapChain.bufferCount;
     swapChainDescription.OutputWindow = d3dApp.windowHandle;
     swapChainDescription.Windowed = true;
     swapChainDescription.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDescription.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
     HRESULT result;
-    DX_CHECK(dx12Components.dxgiFactory->CreateSwapChain(
-        dx12Commands.commandQueue.Get(),
+    DX_CHECK(D3DState.device.dxgiFactory->CreateSwapChain(
+        D3DState.device.commandQueue.Get(),
         &swapChainDescription,
-        dx12Components.swapChain.handle.GetAddressOf()));
+        D3DState.swapChain.handle.GetAddressOf()));
 
     // create rtv and dsv descriptor heaps (image views)
     D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDescriptor = {};
-    rtvHeapDescriptor.NumDescriptors = dx12Components.swapChain.bufferCount;
+    rtvHeapDescriptor.NumDescriptors = D3DState.swapChain.bufferCount;
     rtvHeapDescriptor.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
     rtvHeapDescriptor.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
     rtvHeapDescriptor.NodeMask = 0;
 
-    DX_CHECK(dx12Components.logicalDevice->CreateDescriptorHeap(
+    DX_CHECK(D3DState.device.logicalDevice->CreateDescriptorHeap(
         &rtvHeapDescriptor, 
-        IID_PPV_ARGS(dx12Components.swapChain.rtvHeap.GetAddressOf())));
+        IID_PPV_ARGS(D3DState.swapChain.rtvHeap.GetAddressOf())));
 
     D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDescriptor = {};
     dsvHeapDescriptor.NumDescriptors = 1;
@@ -333,179 +362,179 @@ void InitDirect3D()
     dsvHeapDescriptor.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
     dsvHeapDescriptor.NodeMask = 0;
 
-    DX_CHECK(dx12Components.logicalDevice->CreateDescriptorHeap(
+    DX_CHECK(D3DState.device.logicalDevice->CreateDescriptorHeap(
         &dsvHeapDescriptor,
-        IID_PPV_ARGS(dx12Components.swapChain.dsvHeap.GetAddressOf())));
+        IID_PPV_ARGS(D3DState.swapChain.dsvHeap.GetAddressOf())));
 
     // resize code
-    assert(dx12Components.logicalDevice);
-    assert(dx12Components.swapChain.handle);
-    assert(dx12Commands.directCmdListAlloc);
+    assert(D3DState.device.logicalDevice);
+    assert(D3DState.swapChain.handle);
+    assert(D3DState.device.directCmdListAlloc);
 
     // flush command queue
-    dx12SynchPrimitives.fence.currentFence++;
+    D3DState.fence.currentFence++;
 
-    dx12Commands.commandQueue->Signal(dx12SynchPrimitives.fence.handle.Get(), dx12SynchPrimitives.fence.currentFence);
+    D3DState.device.commandQueue->Signal(D3DState.fence.handle.Get(), D3DState.fence.currentFence);
 
-    if(dx12SynchPrimitives.fence.handle->GetCompletedValue() < dx12SynchPrimitives.fence.currentFence)
+    if(D3DState.fence.handle->GetCompletedValue() < D3DState.fence.currentFence)
     {
         HANDLE eventHandle = CreateEventEx(nullptr, nullptr, false, EVENT_ALL_ACCESS);
 
-        dx12SynchPrimitives.fence.handle->SetEventOnCompletion(dx12SynchPrimitives.fence.currentFence, eventHandle);
+        D3DState.fence.handle->SetEventOnCompletion(D3DState.fence.currentFence, eventHandle);
 
         WaitForSingleObject(eventHandle, INFINITE);
         CloseHandle(eventHandle);
     }
 
-    DX_CHECK(dx12Commands.commandList->Reset(dx12Commands.directCmdListAlloc.Get(), nullptr));
+    DX_CHECK(D3DState.device.commandList->Reset(D3DState.device.directCmdListAlloc.Get(), nullptr));
 
     // release swapchain resources
-    for (int i = 0; i < dx12Components.swapChain.bufferCount; i++)
+    for (int i = 0; i < D3DState.swapChain.bufferCount; i++)
     {
-        dx12Components.swapChain.imageBuffer[i].Reset();
+        D3DState.swapChain.imageBuffer[i].Reset();
     }
 
-    dx12Components.swapChain.depthStencilBuffer.Reset();
+    D3DState.swapChain.depthStencilBuffer.Reset();
 
     // resize the swapchain
-    DX_CHECK(dx12Components.swapChain.handle->ResizeBuffers(
-        dx12Components.swapChain.bufferCount,
-        windowImageInfo.clientWidth, windowImageInfo.clientHeight,
-        windowImageInfo.backBufferFormat,
+    DX_CHECK(D3DState.swapChain.handle->ResizeBuffers(
+        D3DState.swapChain.bufferCount,
+        D3DState.clientWidth, D3DState.clientHeight,
+        D3DState.backBufferFormat,
         DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH));
 
-    dx12Components.swapChain.currentBackBuffer = 0;
+    D3DState.swapChain.currentBackBuffer = 0;
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(dx12Components.swapChain.rtvHeap->GetCPUDescriptorHandleForHeapStart());
-    for (uint32 i = 0; i < dx12Components.swapChain.bufferCount; i++)
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(D3DState.swapChain.rtvHeap->GetCPUDescriptorHandleForHeapStart());
+    for (uint32 i = 0; i < D3DState.swapChain.bufferCount; i++)
     {
-        DX_CHECK(dx12Components.swapChain.handle->GetBuffer(i, IID_PPV_ARGS(&dx12Components.swapChain.imageBuffer[i])));
-        dx12Components.logicalDevice->CreateRenderTargetView(dx12Components.swapChain.imageBuffer[i].Get(), nullptr, rtvHeapHandle);
-        rtvHeapHandle.Offset(1, dx12DescriptorSizes.rtv);
+        DX_CHECK(D3DState.swapChain.handle->GetBuffer(i, IID_PPV_ARGS(&D3DState.swapChain.imageBuffer[i])));
+        D3DState.device.logicalDevice->CreateRenderTargetView(D3DState.swapChain.imageBuffer[i].Get(), nullptr, rtvHeapHandle);
+        rtvHeapHandle.Offset(1, D3DState.device.descriptorSizes.rtv);
     }
 
     // create the depth/stencil buffer and view
     D3D12_RESOURCE_DESC depthStencilDescription = {};
     depthStencilDescription.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     depthStencilDescription.Alignment = 0;
-    depthStencilDescription.Width = windowImageInfo.clientWidth;
-    depthStencilDescription.Height = windowImageInfo.clientHeight;
+    depthStencilDescription.Width = D3DState.clientWidth;
+    depthStencilDescription.Height = D3DState.clientHeight;
     depthStencilDescription.DepthOrArraySize = 1;
     depthStencilDescription.MipLevels = 1;
     depthStencilDescription.Format = DXGI_FORMAT_R24G8_TYPELESS;
-    depthStencilDescription.SampleDesc.Count = dx12FeaturesSupport.msaa4xState ? 4 : 1;
-    depthStencilDescription.SampleDesc.Quality = dx12FeaturesSupport.msaa4xState ? (dx12FeaturesSupport.msaa4xState - 1) : 0;
+    depthStencilDescription.SampleDesc.Count = D3DState.device.features.msaa4xState ? 4 : 1;
+    depthStencilDescription.SampleDesc.Quality = D3DState.device.features.msaa4xState ? (D3DState.device.features.msaa4xState - 1) : 0;
     depthStencilDescription.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     depthStencilDescription.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 
     D3D12_CLEAR_VALUE optClear;
-    optClear.Format = windowImageInfo.depthStencilFormat;
+    optClear.Format = D3DState.depthStencilFormat;
     optClear.DepthStencil.Depth = 1.0f;
     optClear.DepthStencil.Stencil = 0;
-    DX_CHECK(dx12Components.logicalDevice->CreateCommittedResource(
+    DX_CHECK(D3DState.device.logicalDevice->CreateCommittedResource(
         &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
         D3D12_HEAP_FLAG_NONE,
         &depthStencilDescription,
         D3D12_RESOURCE_STATE_COMMON,
         &optClear,
-        IID_PPV_ARGS(dx12Components.swapChain.depthStencilBuffer.GetAddressOf())));
+        IID_PPV_ARGS(D3DState.swapChain.depthStencilBuffer.GetAddressOf())));
 
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvViewDescription = {};
     dsvViewDescription.Flags = D3D12_DSV_FLAG_NONE;
     dsvViewDescription.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-    dsvViewDescription.Format = windowImageInfo.depthStencilFormat;
+    dsvViewDescription.Format = D3DState.depthStencilFormat;
     dsvViewDescription.Texture2D.MipSlice = 0;
-    dx12Components.logicalDevice->CreateDepthStencilView(dx12Components.swapChain.depthStencilBuffer.Get(), &dsvViewDescription, DepthStencilView());
+    D3DState.device.logicalDevice->CreateDepthStencilView(D3DState.swapChain.depthStencilBuffer.Get(), &dsvViewDescription, DepthStencilView());
 
     // transition the resource from its initial state to be used as a depth buffer
-    dx12Commands.commandList->ResourceBarrier(
+    D3DState.device.commandList->ResourceBarrier(
         1,
         &CD3DX12_RESOURCE_BARRIER::Transition(
-            dx12Components.swapChain.depthStencilBuffer.Get(),
+            D3DState.swapChain.depthStencilBuffer.Get(),
             D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE));
 
     // execute resize commands
-    DX_CHECK(dx12Commands.commandList->Close());
-    ID3D12CommandList* cmdsLists[] = { dx12Commands.commandList.Get() };
-    dx12Commands.commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+    DX_CHECK(D3DState.device.commandList->Close());
+    ID3D12CommandList* cmdsLists[] = { D3DState.device.commandList.Get() };
+    D3DState.device.commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 
     // flush command queue
-    dx12SynchPrimitives.fence.currentFence++;
+    D3DState.fence.currentFence++;
 
-    DX_CHECK(dx12Commands.commandQueue->Signal(dx12SynchPrimitives.fence.handle.Get(), dx12SynchPrimitives.fence.currentFence));
+    DX_CHECK(D3DState.device.commandQueue->Signal(D3DState.fence.handle.Get(), D3DState.fence.currentFence));
 
-    if(dx12SynchPrimitives.fence.handle->GetCompletedValue() < dx12SynchPrimitives.fence.currentFence)
+    if(D3DState.fence.handle->GetCompletedValue() < D3DState.fence.currentFence)
     {
         HANDLE eventHandle = CreateEventEx(nullptr, nullptr, false, EVENT_ALL_ACCESS);
 
-        DX_CHECK(dx12SynchPrimitives.fence.handle->SetEventOnCompletion(dx12SynchPrimitives.fence.currentFence, eventHandle));
+        DX_CHECK(D3DState.fence.handle->SetEventOnCompletion(D3DState.fence.currentFence, eventHandle));
 
         WaitForSingleObject(eventHandle, INFINITE);
         CloseHandle(eventHandle);
     }
 
     // update the viewport transform to cover the client area
-    windowImageInfo.screenViewport.TopLeftX = 0;
-    windowImageInfo.screenViewport.TopLeftY = 0;
-    windowImageInfo.screenViewport.Width = static_cast<float32>(windowImageInfo.clientWidth);
-    windowImageInfo.screenViewport.Height = static_cast<float32>(windowImageInfo.clientHeight);
-    windowImageInfo.screenViewport.MinDepth = 0.0f;
-    windowImageInfo.screenViewport.MaxDepth = 1.0f;
+    D3DState.screenViewport.TopLeftX = 0;
+    D3DState.screenViewport.TopLeftY = 0;
+    D3DState.screenViewport.Width = static_cast<float32>(D3DState.clientWidth);
+    D3DState.screenViewport.Height = static_cast<float32>(D3DState.clientHeight);
+    D3DState.screenViewport.MinDepth = 0.0f;
+    D3DState.screenViewport.MaxDepth = 1.0f;
 
-    windowImageInfo.scissorRect = { 0, 0, static_cast<long>(windowImageInfo.clientWidth), static_cast<long>(windowImageInfo.clientHeight) };
+    D3DState.scissorRect = { 0, 0, static_cast<long>(D3DState.clientWidth), static_cast<long>(D3DState.clientHeight) };
 
 }
 
 void DrawFrame()
 {
     // Draw stuff
-    dx12Commands.directCmdListAlloc->Reset();
+    D3DState.device.directCmdListAlloc->Reset();
 
-    dx12Commands.commandList->Reset(dx12Commands.directCmdListAlloc.Get(), nullptr);
+    D3DState.device.commandList->Reset(D3DState.device.directCmdListAlloc.Get(), nullptr);
 
-    ID3D12Resource* resource = dx12Components.swapChain.imageBuffer[dx12Components.swapChain.currentBackBuffer].Get();
+    ID3D12Resource* resource = D3DState.swapChain.imageBuffer[D3DState.swapChain.currentBackBuffer].Get();
 
     const D3D12_RESOURCE_BARRIER* barrier = &CD3DX12_RESOURCE_BARRIER::Transition(
         resource,
         D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-    dx12Commands.commandList->ResourceBarrier(
+    D3DState.device.commandList->ResourceBarrier(
         1, 
         barrier);
 
     // Set viewport and scissor
-    dx12Commands.commandList->RSSetViewports(1, &windowImageInfo.screenViewport);
-    dx12Commands.commandList->RSSetScissorRects(1, &windowImageInfo.scissorRect);
+    D3DState.device.commandList->RSSetViewports(1, &D3DState.screenViewport);
+    D3DState.device.commandList->RSSetScissorRects(1, &D3DState.scissorRect);
 
     // Clear render targets
-    dx12Commands.commandList->ClearRenderTargetView(CurrentBackBufferView(), DirectX::Colors::LightSteelBlue, 0, nullptr);
-    dx12Commands.commandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+    D3DState.device.commandList->ClearRenderTargetView(CurrentBackBufferView(), DirectX::Colors::LightSteelBlue, 0, nullptr);
+    D3DState.device.commandList->ClearDepthStencilView(DepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
-    dx12Commands.commandList->OMSetRenderTargets(1, &CurrentBackBufferView(), true, &DepthStencilView());
+    D3DState.device.commandList->OMSetRenderTargets(1, &CurrentBackBufferView(), true, &DepthStencilView());
         
-    dx12Commands.commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
+    D3DState.device.commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(
         CurrentBackBuffer(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
-    DX_CHECK(dx12Commands.commandList->Close());
+    DX_CHECK(D3DState.device.commandList->Close());
 
     // execute commands
-    ID3D12CommandList* commandLists[] = { dx12Commands.commandList.Get() };
-    dx12Commands.commandQueue->ExecuteCommandLists(_countof(commandLists), commandLists);
+    ID3D12CommandList* commandLists[] = { D3DState.device.commandList.Get() };
+    D3DState.device.commandQueue->ExecuteCommandLists(_countof(commandLists), commandLists);
 
     // swap buffers
-    dx12Components.swapChain.handle->Present(0, 0);
-    dx12Components.swapChain.currentBackBuffer = (dx12Components.swapChain.currentBackBuffer + 1) % dx12Components.swapChain.bufferCount;
+    D3DState.swapChain.handle->Present(0, 0);
+    D3DState.swapChain.currentBackBuffer = (D3DState.swapChain.currentBackBuffer + 1) % D3DState.swapChain.bufferCount;
 
     // Flush command queue
-    dx12SynchPrimitives.fence.currentFence++;
+    D3DState.fence.currentFence++;
 
-    dx12Commands.commandQueue->Signal(dx12SynchPrimitives.fence.handle.Get(), dx12SynchPrimitives.fence.currentFence);
+    D3DState.device.commandQueue->Signal(D3DState.fence.handle.Get(), D3DState.fence.currentFence);
 
-    if(dx12SynchPrimitives.fence.handle->GetCompletedValue() < dx12SynchPrimitives.fence.currentFence)
+    if(D3DState.fence.handle->GetCompletedValue() < D3DState.fence.currentFence)
     {
         HANDLE eventHandle = CreateEventEx(nullptr, nullptr, false, EVENT_ALL_ACCESS);
 
-        dx12SynchPrimitives.fence.handle->SetEventOnCompletion(dx12SynchPrimitives.fence.currentFence, eventHandle);
+        D3DState.fence.handle->SetEventOnCompletion(D3DState.fence.currentFence, eventHandle);
 
         WaitForSingleObject(eventHandle, INFINITE);
         CloseHandle(eventHandle);
