@@ -46,8 +46,12 @@ inline std::wstring AnsiToWString(const std::string& str)
 //std::cout << "[ERROR]"<< hr__ <<std::endl;
 //if(FAILED(hr__)) { std::cout << "[ERROR]"<< hr__ <<std::endl; }    \        
 
-global_variable bool running = false;
-global_variable HWND windowHandle;
+struct D3DApp
+{
+    bool running = false;
+    HWND windowHandle;
+    HINSTANCE hInstance;
+} d3dApp;
 
 struct D3DFence
 {
@@ -124,6 +128,49 @@ D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView()
 D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()
 {
     return dx12Components.swapChain.dsvHeap->GetCPUDescriptorHandleForHeapStart();
+}
+
+bool InitWindow()
+{
+    WNDCLASS windowClass;
+    windowClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
+    windowClass.lpfnWndProc = MainWindowCallback;
+    windowClass.cbClsExtra = 0;
+    windowClass.cbWndExtra = 0;
+    windowClass.hInstance = d3dApp.hInstance;
+    windowClass.hIcon = 0;
+    windowClass.hCursor = 0;
+    windowClass.hbrBackground = 0;
+    windowClass.lpszMenuName = 0;
+    windowClass.lpszClassName = L"MainWindow";
+
+    if (!RegisterClass(&windowClass))
+    {
+        // TODO: handle error
+        return false;
+    }
+
+    d3dApp.windowHandle = 
+    CreateWindowEx(
+        0,
+        windowClass.lpszClassName,
+        L"AlvarEngine",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        0,
+        0,
+        d3dApp.hInstance,
+        0
+    );
+
+    if(!d3dApp.windowHandle)
+    {
+        // TODO: handle error
+        return false;
+    }
 }
 
 void InitDirect3D()
@@ -421,6 +468,23 @@ void DrawFrame()
     }
 }
 
+void Run()
+{
+    while (d3dApp.running)
+    {
+        MSG message = {};
+        if(PeekMessage(&message, 0, 0, 0, PM_REMOVE))
+        {
+            TranslateMessage(&message);
+            DispatchMessage(&message);
+        }
+        else
+        {
+            DrawFrame();
+        }
+    }
+}
+
 LRESULT CALLBACK
 MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -470,64 +534,16 @@ WinMain(HINSTANCE hInstance,
         int showCmd)
 {
 
-    WNDCLASS windowClass;
-    windowClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
-    windowClass.lpfnWndProc = MainWindowCallback;
-    windowClass.cbClsExtra = 0;
-    windowClass.cbWndExtra = 0;
-    windowClass.hInstance = hInstance;
-    windowClass.hIcon = 0;
-    windowClass.hCursor = 0;
-    windowClass.hbrBackground = 0;
-    windowClass.lpszMenuName = 0;
-    windowClass.lpszClassName = L"MainWindow";
-
-    if (!RegisterClass(&windowClass))
-    {
-        // TODO: handle error
+    if(!InitWindow())
         return false;
-    }
-
-    windowHandle = 
-    CreateWindowEx(
-        0,
-        windowClass.lpszClassName,
-        L"AlvarEngine",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        0,
-        0,
-        hInstance,
-        0
-    );
-
-    if(!windowHandle)
-    {
-        // TODO: handle error
-        return false;
-    }
 
     InitDirect3D();
 
+    // run the application
     // main loop
-    running = true;
+    d3dApp.running = true;
 
-    while (running)
-    {
-        MSG message = {};
-        if(PeekMessage(&message, 0, 0, 0, PM_REMOVE))
-        {
-            TranslateMessage(&message);
-            DispatchMessage(&message);
-        }
-        else
-        {
-            DrawFrame();
-        }
-    }
+    Run();
 
     return 0;
 }
