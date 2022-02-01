@@ -4,7 +4,9 @@
 #define UNICODE
 #endif
 
+#include "defines.h"
 #include "utils.h"
+#include "logger.h"
 
 #define global_variable static;
 #define internal static;
@@ -131,24 +133,28 @@ MainWindowCallback(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     {
         case WM_SIZE:
         {
-            OutputDebugStringA("WM_SIZE\n");
+            logOutput(LOG_LEVEL_INFO, "WM_SIZE\n");
+            //OutputDebugStringA("WM_SIZE\n");
         } break;
 
         case WM_DESTROY:
         {
             running = false;
-            OutputDebugStringA("WM_DESTROY\n");
+            logOutput(LOG_LEVEL_INFO, "WM_DESTROY\n");
+            //OutputDebugStringA("WM_DESTROY\n");
         } break;
 
         case WM_CLOSE:
         {
             running = false;
-            OutputDebugStringA("WM_CLOSE\n");
+            logOutput(LOG_LEVEL_INFO, "WM_CLOSE\n");
+            //OutputDebugStringA("WM_CLOSE\n");
         } break;
 
         case WM_ACTIVATEAPP:
         {
-            OutputDebugStringA("WM_ACTIVATEAPP\n");
+            logOutput(LOG_LEVEL_INFO, "WM_ACTIVATEAPP\n");
+            //OutputDebugStringA("WM_ACTIVATEAPP\n");
         } break;
             
         default:
@@ -208,6 +214,10 @@ WinMain(HINSTANCE hInstance,
     }
 
     // init Direct3D 12
+    ComPtr<ID3D12Debug> debugController;
+    D3D12GetDebugInterface(IID_PPV_ARGS(&debugController));
+    debugController->EnableDebugLayer();
+
     // TODO: Manage possible errors
     CreateDXGIFactory1(IID_PPV_ARGS(&dx12Components.dxgiFactory));
 
@@ -291,7 +301,7 @@ WinMain(HINSTANCE hInstance,
     swapChainDescription.BufferCount = dx12Components.swapChain.bufferCount;
     swapChainDescription.OutputWindow = windowHandle;
     swapChainDescription.Windowed = true;
-    swapChainDescription.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    swapChainDescription.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDescription.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
     dx12Components.dxgiFactory->CreateSwapChain(
@@ -320,29 +330,152 @@ WinMain(HINSTANCE hInstance,
         &dsvHeapDescriptor,
         IID_PPV_ARGS(dx12Components.swapChain.dsvHeap.GetAddressOf()));
 
+    // resize code
+    assert(dx12Components.logicalDevice);
+    assert(dx12Components.swapChain.handle);
+    assert(dx12Commands.directCmdListAlloc);
+
+    // flush command queue
+    dx12SynchPrimitives.fence.currentFence++;
+
+    dx12Commands.commandQueue->Signal(dx12SynchPrimitives.fence.handle.Get(), dx12SynchPrimitives.fence.currentFence);
+
+    if(dx12SynchPrimitives.fence.handle->GetCompletedValue() < dx12SynchPrimitives.fence.currentFence)
+    {
+        HANDLE eventHandle = CreateEventEx(nullptr, nullptr, false, EVENT_ALL_ACCESS);
+
+        dx12SynchPrimitives.fence.handle->SetEventOnCompletion(dx12SynchPrimitives.fence.currentFence, eventHandle);
+
+        WaitForSingleObject(eventHandle, INFINITE);
+        CloseHandle(eventHandle);
+    }
+
+    dx12Commands.commandList->Reset(dx12Commands.directCmdListAlloc.Get(), nullptr);
+
+    // release swapchain resources
+    for (int i = 0; i < dx12Components.swapChain.bufferCount; i++)
+    {
+        dx12Components.swapChain.imageBuffer[i].Reset();
+    }
+
+    dx12Components.swapChain.depthStencilBuffer.Reset();
+
+    // resize the swapchain
+    dx12Components.swapChain.handle->ResizeBuffers(
+        dx12Components.swapChain.bufferCount,
+        windowImageInfo.clientWidth, windowImageInfo.clientHeight,
+        windowImageInfo.backBufferFormat,
+        DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH);
+
+    dx12Components.swapChain.currentBackBuffer = 0;
+
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(dx12Components.swapChain.rtvHeap->GetCPUDescriptorHandleForHeapStart());
+    for (uint32 i = 0; i < dx12Components.swapChain.bufferCount; i++)
+    {
+        dx12Components.swapChain.handle->GetBuffer(i, IID_PPV_ARGS(&dx12Components.swapChain.imageBuffer[i]));
+        dx12Components.logicalDevice->CreateRenderTargetView(dx12Components.swapChain.imageBuffer[i].Get(), nullptr, rtvHeapHandle);
+        rtvHeapHandle.Offset(1, dx12DescriptorSizes.rtv);
+    }
+
+    // create the depth/stencil buffer and view
+    D3D12_RESOURCE_DESC depthStencilDescription = {};
+    depthStencilDescription.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    depthStencilDescription.Alignment = 0;
+    depthStencilDescription.Width = windowImageInfo.clientWidth;
+    depthStencilDescription.Height = windowImageInfo.clientHeight;
+    depthStencilDescription.DepthOrArraySize = 1;
+    depthStencilDescription.MipLevels = 1;
+    depthStencilDescription.Format = DXGI_FORMAT_R24G8_TYPELESS;
+    depthStencilDescription.SampleDesc.Count = dx12FeaturesSupport.msaa4xState ? 4 : 1;
+    depthStencilDescription.SampleDesc.Quality = dx12FeaturesSupport.msaa4xState ? (dx12FeaturesSupport.msaa4xState - 1) : 0;
+    depthStencilDescription.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    depthStencilDescription.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_CLEAR_VALUE optClear;
+    optClear.Format = windowImageInfo.depthStencilFormat;
+    optClear.DepthStencil.Depth = 1.0f;
+    optClear.DepthStencil.Stencil = 0;
+    dx12Components.logicalDevice->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+        D3D12_HEAP_FLAG_NONE,
+        &depthStencilDescription,
+        D3D12_RESOURCE_STATE_COMMON,
+        &optClear,
+        IID_PPV_ARGS(dx12Components.swapChain.depthStencilBuffer.GetAddressOf()));
+
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvViewDescription = {};
+    dsvViewDescription.Flags = D3D12_DSV_FLAG_NONE;
+    dsvViewDescription.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsvViewDescription.Format = windowImageInfo.depthStencilFormat;
+    dsvViewDescription.Texture2D.MipSlice = 0;
+    dx12Components.logicalDevice->CreateDepthStencilView(dx12Components.swapChain.depthStencilBuffer.Get(), &dsvViewDescription, DepthStencilView());
+
+    // transition the resource from its initial state to be used as a depth buffer
+    dx12Commands.commandList->ResourceBarrier(
+        1,
+        &CD3DX12_RESOURCE_BARRIER::Transition(
+            dx12Components.swapChain.depthStencilBuffer.Get(),
+            D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE));
+
+    // execute resize commands
+    dx12Commands.commandList->Close();
+    ID3D12CommandList* cmdsLists[] = { dx12Commands.commandList.Get() };
+    dx12Commands.commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
+
+    // flush command queue
+    dx12SynchPrimitives.fence.currentFence++;
+
+    dx12Commands.commandQueue->Signal(dx12SynchPrimitives.fence.handle.Get(), dx12SynchPrimitives.fence.currentFence);
+
+    if(dx12SynchPrimitives.fence.handle->GetCompletedValue() < dx12SynchPrimitives.fence.currentFence)
+    {
+        HANDLE eventHandle = CreateEventEx(nullptr, nullptr, false, EVENT_ALL_ACCESS);
+
+        dx12SynchPrimitives.fence.handle->SetEventOnCompletion(dx12SynchPrimitives.fence.currentFence, eventHandle);
+
+        WaitForSingleObject(eventHandle, INFINITE);
+        CloseHandle(eventHandle);
+    }
+
+    // update the viewport transform to cover the client area
+    windowImageInfo.screenViewport.TopLeftX = 0;
+    windowImageInfo.screenViewport.TopLeftY = 0;
+    windowImageInfo.screenViewport.Width = static_cast<float32>(windowImageInfo.clientWidth);
+    windowImageInfo.screenViewport.Height = static_cast<float32>(windowImageInfo.clientHeight);
+    windowImageInfo.screenViewport.MinDepth = 0.0f;
+    windowImageInfo.screenViewport.MaxDepth = 1.0f;
+
+    windowImageInfo.scissorRect = { 0, 0, static_cast<long>(windowImageInfo.clientWidth), static_cast<long>(windowImageInfo.clientHeight) };
+
     // main loop
     running = true;
 
     while (running)
     {
-        MSG message;
-        BOOL messageResult = GetMessage(&message, 0, 0, 0);
-        if(messageResult > 0)
+        MSG message = {};
+        if(PeekMessage(&message, 0, 0, 0, PM_REMOVE))
         {
+            logOutput(LOG_LEVEL_INFO, "windows message");
             TranslateMessage(&message);
             DispatchMessage(&message);
         }
         else
         {
+            logOutput(LOG_LEVEL_INFO, "drawing");
             // Draw stuff
             dx12Commands.directCmdListAlloc->Reset();
 
             dx12Commands.commandList->Reset(dx12Commands.directCmdListAlloc.Get(), nullptr);
 
+            ID3D12Resource* resource = dx12Components.swapChain.imageBuffer[dx12Components.swapChain.currentBackBuffer].Get();
+
+            const D3D12_RESOURCE_BARRIER* barrier = &CD3DX12_RESOURCE_BARRIER::Transition(
+                resource,
+                D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
             dx12Commands.commandList->ResourceBarrier(
                 1, 
-                &CD3DX12_RESOURCE_BARRIER::Transition(dx12Components.swapChain.imageBuffer[dx12Components.swapChain.currentBackBuffer].Get(),
-                D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+                barrier);
 
             // Set viewport and scissor
             dx12Commands.commandList->RSSetViewports(1, &windowImageInfo.screenViewport);
