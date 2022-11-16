@@ -50,3 +50,10 @@ void report_assertion_failure(const char* expression, const char* message, const
 #define SGSASSERT_DEBUG(expr)
 
 #endif // SGSASSERTIONS_ENABLED
+
+static void IsaacNoJuguisAClasse()
+{
+    float jaja;
+    bool jiji = true;
+    return;
+}
